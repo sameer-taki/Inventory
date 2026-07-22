@@ -1,0 +1,35 @@
+# Supabase project configuration.
+# `project_id` is a local label; link a real project with `supabase link`.
+project_id = "golden-operations-platform"
+
+[api]
+enabled = true
+port = 54321
+# Expose the module schemas so PostgREST / supabase-js can read them and call
+# their RPCs. Without this, only `public` is reachable and the app breaks.
+# On a HOSTED project set the same list in Dashboard → Project Settings → API →
+# "Exposed schemas".
+schemas = ["public", "graphql_public", "ops", "quality", "mfg", "fleet"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+# Update these to the deployed Vercel URL(s) before shipping.
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000"]
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+# For internal rollout you'll likely disable public confirmations and invite
+# users instead; keep confirmations on for a public demo.
+enable_confirmations = false
