@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type NavItem = { href: string; label: string; badge?: string };
+type NavItem = { href: string; label: string; badge?: string; exact?: boolean };
 type NavSection = { title: string; items: NavItem[] };
 
 const SECTIONS: NavSection[] = [
   {
     title: "Overview",
-    items: [{ href: "/dashboard", label: "Dashboard" }],
+    items: [{ href: "/dashboard", label: "Dashboard", exact: true }],
   },
   {
     title: "Quality · M1",
@@ -20,11 +20,21 @@ const SECTIONS: NavSection[] = [
   },
   {
     title: "Manufacturing · M2–M6",
-    items: [{ href: "/manufacturing", label: "Overview", badge: "building" }],
+    items: [
+      { href: "/manufacturing", label: "Overview", exact: true },
+      { href: "/manufacturing/production", label: "Production orders" },
+      { href: "/manufacturing/planning", label: "Planning (MRP)" },
+      { href: "/manufacturing/boms", label: "BOMs" },
+      { href: "/manufacturing/work-centres", label: "Work centres" },
+    ],
   },
   {
     title: "Fleet · F0–F3",
-    items: [{ href: "/fleet", label: "Overview", badge: "planned" }],
+    items: [
+      { href: "/fleet", label: "Overview", exact: true },
+      { href: "/fleet/vehicles", label: "Vehicles" },
+      { href: "/fleet/renewals", label: "Renewals" },
+    ],
   },
 ];
 
@@ -55,9 +65,10 @@ export function Sidebar() {
             </p>
             <ul className="space-y-0.5">
               {section.items.map((item) => {
-                const active =
-                  pathname === item.href ||
-                  pathname.startsWith(item.href + "/");
+                const active = item.exact
+                  ? pathname === item.href
+                  : pathname === item.href ||
+                    pathname.startsWith(item.href + "/");
                 return (
                   <li key={item.href}>
                     <Link

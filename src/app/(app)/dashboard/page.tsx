@@ -26,11 +26,11 @@ type NcrRow = {
 const MODULE_STATUS: { module: string; name: string; status: string }[] = [
   { module: "M0", name: "Foundations & discovery", status: "done" },
   { module: "M1", name: "Quality / NCR / CAPA", status: "live" },
-  { module: "M3", name: "BOMs / routings / work centres", status: "schema" },
-  { module: "M2", name: "Production + BC write-back", status: "schema" },
-  { module: "M4", name: "MRP / MPS engine", status: "schema" },
+  { module: "M3", name: "BOMs / routings / work centres", status: "live" },
+  { module: "M2", name: "Production + BC write-back", status: "live" },
+  { module: "M4", name: "MRP / MPS engine", status: "live" },
   { module: "M6", name: "Lot/serial genealogy", status: "schema" },
-  { module: "F0–F3", name: "Fleet module", status: "schema" },
+  { module: "F1–F3", name: "Fleet register / renewals / fuel", status: "live" },
 ];
 
 export default async function DashboardPage() {
