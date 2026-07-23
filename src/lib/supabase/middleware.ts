@@ -12,6 +12,17 @@ type CookieToSet = { name: string; value: string; options: CookieOptions };
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
+  // Resilience for auth email links: if a PKCE `code` lands on any path other
+  // than the callback (e.g. Supabase fell back to the Site URL root because the
+  // redirect wasn't allowlisted), forward it to /auth/callback to be exchanged.
+  const authCode = request.nextUrl.searchParams.get("code");
+  if (authCode && !request.nextUrl.pathname.startsWith("/auth/callback")) {
+    const cb = request.nextUrl.clone();
+    cb.pathname = "/auth/callback";
+    if (!cb.searchParams.get("next")) cb.searchParams.set("next", "/reset-password");
+    return NextResponse.redirect(cb);
+  }
+
   // If env is not configured yet, don't block — let pages render their notice.
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return supabaseResponse;
 
