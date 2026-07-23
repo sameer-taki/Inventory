@@ -1,11 +1,22 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getSessionContext } from "@/lib/auth";
 import { StatusBadge } from "@/components/StatusBadge";
 import { fmtDate, fmtDateTime, fmtFjd, titleCase } from "@/lib/format";
 import { MeterForm, FuelForm, RenewalForm } from "./VehicleForms";
+import { AssignForm, EndAssignmentForm } from "./AssignmentForms";
 
 export const dynamic = "force-dynamic";
+
+type Assignment = {
+  assignment_id: number;
+  driver_id: number | null;
+  site: string | null;
+  assigned_from: string;
+  assigned_to: string | null;
+  note: string | null;
+};
 
 type Vehicle = {
   vehicle_id: number;
@@ -30,6 +41,12 @@ export default async function VehicleDetail({
   const vid = Number(id);
   if (!Number.isFinite(vid)) notFound();
 
+  const ctx = await getSessionContext();
+  const roles = ctx?.roles ?? [];
+  const isFleetAdmin = roles.includes("fleet_admin");
+  const canAssign =
+    isFleetAdmin || roles.includes("workshop") || roles.includes("admin");
+
   const supabase = await createClient();
   const { data: v } = await supabase
     .schema("fleet")
@@ -39,7 +56,7 @@ export default async function VehicleDetail({
     .maybeSingle<Vehicle>();
   if (!v) notFound();
 
-  const [{ data: meters }, { data: fuel }, { data: renewals }] =
+  const [{ data: meters }, { data: fuel }, { data: renewals }, { data: assignments }] =
     await Promise.all([
       supabase
         .schema("fleet")
@@ -66,7 +83,49 @@ export default async function VehicleDetail({
         .neq("status", "renewed")
         .order("due_date")
         .returns<{ renewal_id: number; kind: string; due_date: string; status: string; reference_no: string | null }[]>(),
+      supabase
+        .schema("fleet")
+        .from("assignments")
+        .select("assignment_id, driver_id, site, assigned_from, assigned_to, note")
+        .eq("vehicle_id", vid)
+        .order("assigned_from", { ascending: false })
+        .order("assignment_id", { ascending: false })
+        .limit(10)
+        .returns<Assignment[]>(),
     ]);
+
+  // Driver names are personal data (F8) → resolvable by fleet_admin only.
+  const driverIds = Array.from(
+    new Set((assignments ?? []).map((a) => a.driver_id).filter((x): x is number => !!x)),
+  );
+  let driverName = new Map<number, string>();
+  let driverOptions: { driver_id: number; name: string }[] = [];
+  if (isFleetAdmin) {
+    const { data: drivers } = await supabase
+      .schema("fleet")
+      .from("drivers")
+      .select("driver_id, user_id, is_active")
+      .returns<{ driver_id: number; user_id: number; is_active: boolean }[]>();
+    const userIds = Array.from(new Set((drivers ?? []).map((d) => d.user_id)));
+    const { data: users } = userIds.length
+      ? await supabase
+          .schema("ops")
+          .from("users")
+          .select("user_id, full_name, email")
+          .in("user_id", userIds)
+          .returns<{ user_id: number; full_name: string | null; email: string }[]>()
+      : { data: [] as { user_id: number; full_name: string | null; email: string }[] };
+    const uMap = new Map((users ?? []).map((u) => [u.user_id, u.full_name || u.email]));
+    driverName = new Map(
+      (drivers ?? []).map((d) => [d.driver_id, uMap.get(d.user_id) ?? `User #${d.user_id}`]),
+    );
+    driverOptions = (drivers ?? [])
+      .filter((d) => d.is_active)
+      .map((d) => ({ driver_id: d.driver_id, name: uMap.get(d.user_id) ?? `User #${d.user_id}` }));
+  }
+  const openAssignment = (assignments ?? []).find((a) => !a.assigned_to);
+  const driverLabel = (id: number | null) =>
+    id ? (driverName.get(id) ?? (isFleetAdmin ? `Driver #${id}` : "On file (restricted)")) : "Pool / unassigned";
 
   return (
     <div>
@@ -118,6 +177,56 @@ export default async function VehicleDetail({
             )}
           </section>
 
+          <section className="card p-5">
+            <h2 className="mb-3 text-sm font-semibold text-slate-700">
+              Assignment log
+              <span className="ml-2 text-xs font-normal text-slate-400">
+                who holds this vehicle, and when (F6 — thin log)
+              </span>
+            </h2>
+            {assignments && assignments.length > 0 ? (
+              <table className="min-w-full text-sm">
+                <thead className="text-left text-xs uppercase text-slate-400">
+                  <tr>
+                    <th className="py-1.5 pr-4">Driver</th>
+                    <th className="py-1.5 pr-4">Site</th>
+                    <th className="py-1.5 pr-4">Period</th>
+                    <th className="py-1.5">Note</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {assignments.map((a) => (
+                    <tr key={a.assignment_id} className={a.assigned_to ? "" : "bg-emerald-50/40"}>
+                      <td className="py-1.5 pr-4 font-medium text-slate-700">
+                        {driverLabel(a.driver_id)}
+                      </td>
+                      <td className="py-1.5 pr-4 text-slate-500">{a.site ?? "—"}</td>
+                      <td className="py-1.5 pr-4 text-slate-500">
+                        {fmtDate(a.assigned_from)} →{" "}
+                        {a.assigned_to ? (
+                          fmtDate(a.assigned_to)
+                        ) : (
+                          <span className="font-medium text-emerald-700">current</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 text-slate-400">{a.note ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="text-sm text-slate-400">No assignments recorded.</p>
+            )}
+            {canAssign && openAssignment && (
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+                  End current assignment
+                </p>
+                <EndAssignmentForm assignmentId={openAssignment.assignment_id} vehicleId={vid} />
+              </div>
+            )}
+          </section>
+
           <div className="grid gap-6 sm:grid-cols-2">
             <section className="card p-5">
               <h2 className="mb-3 text-sm font-semibold text-slate-700">Recent meter readings</h2>
@@ -162,6 +271,18 @@ export default async function VehicleDetail({
         </div>
 
         <div className="space-y-6">
+          {canAssign && (
+            <section className="card p-5">
+              <h2 className="mb-3 text-sm font-semibold text-slate-700">Assign vehicle</h2>
+              <AssignForm vehicleId={vid} drivers={driverOptions} />
+              {!isFleetAdmin && (
+                <p className="mt-2 text-xs text-slate-400">
+                  Driver names are restricted to fleet_admin (F8); assign to a
+                  site or leave as pool.
+                </p>
+              )}
+            </section>
+          )}
           <section className="card p-5">
             <h2 className="mb-3 text-sm font-semibold text-slate-700">Record meter</h2>
             <MeterForm vehicleId={vid} />

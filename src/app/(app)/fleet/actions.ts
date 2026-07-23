@@ -237,6 +237,69 @@ export async function rejectFuelImportRowAction(
   return {};
 }
 
+export async function saveDriverAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const userId = num(formData.get("user_id"));
+  const licenceClass = s(formData.get("licence_class"));
+  const licenceExpiry = s(formData.get("licence_expiry"));
+  const driverId = num(formData.get("driver_id"));
+  if (!userId || !licenceClass || !licenceExpiry)
+    return { error: "Person, licence class and expiry are required." };
+  const supabase = await createClient();
+  const { error } = await supabase.schema("fleet").rpc("save_driver", {
+    p_user_id: userId,
+    p_licence_class: licenceClass,
+    p_licence_expiry: licenceExpiry,
+    p_forklift_certified: formData.get("forklift_certified") === "on",
+    p_forklift_cert_expiry: s(formData.get("forklift_cert_expiry")),
+    p_driver_id: driverId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/fleet/drivers");
+  return {};
+}
+
+export async function assignVehicleAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const vehicleId = num(formData.get("vehicle_id"));
+  const assignedFrom = s(formData.get("assigned_from"));
+  if (!vehicleId || !assignedFrom)
+    return { error: "A start date is required." };
+  const supabase = await createClient();
+  const { error } = await supabase.schema("fleet").rpc("assign_vehicle", {
+    p_vehicle_id: vehicleId,
+    p_assigned_from: assignedFrom,
+    p_driver_id: num(formData.get("driver_id")),
+    p_site: s(formData.get("site")),
+    p_note: s(formData.get("note")),
+  });
+  if (error) return { error: error.message };
+  revalidatePath(`/fleet/vehicles/${vehicleId}`);
+  return {};
+}
+
+export async function endAssignmentAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const assignmentId = num(formData.get("assignment_id"));
+  const vehicleId = num(formData.get("vehicle_id"));
+  const assignedTo = s(formData.get("assigned_to"));
+  if (!assignmentId || !assignedTo) return { error: "An end date is required." };
+  const supabase = await createClient();
+  const { error } = await supabase.schema("fleet").rpc("end_assignment", {
+    p_assignment_id: assignmentId,
+    p_assigned_to: assignedTo,
+  });
+  if (error) return { error: error.message };
+  if (vehicleId) revalidatePath(`/fleet/vehicles/${vehicleId}`);
+  return {};
+}
+
 export async function runRemindersAction(): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.schema("fleet").rpc("run_reminders");
