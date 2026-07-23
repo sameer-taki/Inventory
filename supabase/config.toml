@@ -33,3 +33,8 @@ enable_signup = true
 # For internal rollout you'll likely disable public confirmations and invite
 # users instead; keep confirmations on for a public demo.
 enable_confirmations = false
+
+# The gateway-bridge worker is invoked by a scheduler (not an end-user JWT),
+# and it authenticates itself with x-bridge-secret in deliver mode.
+[functions.gateway-bridge]
+verify_jwt = false
