@@ -30,6 +30,7 @@ const SECTIONS: NavSection[] = [
       { href: "/manufacturing/work-centres", label: "Work centres" },
       { href: "/manufacturing/routings", label: "Routings" },
       { href: "/manufacturing/capacity", label: "Capacity" },
+      { href: "/manufacturing/costs", label: "Standard costs" },
       { href: "/manufacturing/genealogy", label: "Genealogy" },
     ],
   },

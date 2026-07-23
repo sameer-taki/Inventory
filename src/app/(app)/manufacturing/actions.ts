@@ -112,6 +112,25 @@ export async function createWorkCentreAction(
   redirect("/manufacturing/work-centres");
 }
 
+// ── Costing ─────────────────────────────────────────────────────────────────
+export async function setItemCostAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const itemId = n(formData.get("item_id"));
+  const stdCost = n(formData.get("std_cost"));
+  if (!itemId || stdCost === null) return { error: "Item and standard cost are required." };
+  const supabase = await createClient();
+  const { error } = await supabase.schema("mfg").rpc("set_item_cost", {
+    p_item_id: itemId,
+    p_std_cost: stdCost,
+    p_source: "manual",
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/manufacturing/costs");
+  return {};
+}
+
 // ── Routings ────────────────────────────────────────────────────────────────
 export async function createRoutingAction(
   _prev: ActionState,
