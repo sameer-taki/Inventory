@@ -2,10 +2,23 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "@/components/StatusBadge";
-import { fmtDate, fmtDateTime } from "@/lib/format";
+import { fmtDate, fmtDateTime, fmtFjd } from "@/lib/format";
 import { POActions } from "./POActions";
 
 export const dynamic = "force-dynamic";
+
+type PoCost = {
+  qty_completed: number;
+  components_without_cost: number;
+  std_material_per_unit: number;
+  std_conv_per_unit: number;
+  std_cost_per_unit: number;
+  earned_standard_cost: number;
+  actual_material_cost: number;
+  actual_labour_cost: number;
+  actual_total_cost: number;
+  variance_fjd: number;
+};
 
 type PO = {
   production_order_id: number;
@@ -74,6 +87,15 @@ export default async function ProductionOrderDetail({
         .order("seq")
         .returns<Completion[]>(),
     ]);
+
+  const { data: cost } = await supabase
+    .schema("mfg")
+    .from("v_po_cost")
+    .select(
+      "qty_completed, components_without_cost, std_material_per_unit, std_conv_per_unit, std_cost_per_unit, earned_standard_cost, actual_material_cost, actual_labour_cost, actual_total_cost, variance_fjd",
+    )
+    .eq("production_order_id", poId)
+    .maybeSingle<PoCost>();
 
   const { data: compItems } = await supabase
     .schema("ops")
@@ -154,6 +176,59 @@ export default async function ProductionOrderDetail({
               <p className="text-sm text-slate-400">No completions posted yet.</p>
             )}
           </section>
+
+          <section className="card p-5">
+            <h2 className="mb-1 text-sm font-semibold text-slate-700">
+              Cost roll-up
+              <span className="ml-2 text-xs font-normal text-slate-400">
+                standard vs actual · deterministic (I4)
+              </span>
+            </h2>
+            {cost ? (
+              <>
+                <div className="mb-4 mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <CostTile label="Std / unit" value={fmtFjd(cost.std_cost_per_unit)} />
+                  <CostTile label="Earned std" value={fmtFjd(cost.earned_standard_cost)} />
+                  <CostTile label="Actual" value={fmtFjd(cost.actual_total_cost)} />
+                  <CostTile
+                    label="Variance"
+                    value={`${cost.variance_fjd > 0 ? "+" : ""}${fmtFjd(cost.variance_fjd)}`}
+                    tone={
+                      cost.variance_fjd > 0.005
+                        ? "bad"
+                        : cost.variance_fjd < -0.005
+                          ? "good"
+                          : "flat"
+                    }
+                  />
+                </div>
+                <table className="min-w-full text-sm">
+                  <tbody className="divide-y divide-slate-100">
+                    <CostRow label="Standard material / unit" value={fmtFjd(cost.std_material_per_unit)} />
+                    <CostRow label="Standard labour + overhead / unit" value={fmtFjd(cost.std_conv_per_unit)} />
+                    <CostRow label={`Earned standard (× ${cost.qty_completed} done + setup)`} value={fmtFjd(cost.earned_standard_cost)} />
+                    <CostRow label="Actual material (at standard price)" value={fmtFjd(cost.actual_material_cost)} />
+                    <CostRow label="Actual labour + overhead" value={fmtFjd(cost.actual_labour_cost)} />
+                    <CostRow label="Actual total" value={fmtFjd(cost.actual_total_cost)} strong />
+                  </tbody>
+                </table>
+                <p className="mt-3 text-xs text-slate-400">
+                  Actual material is valued at standard price, so this variance is
+                  usage/efficiency (price variance stays in BC, the costing master).
+                  {cost.components_without_cost > 0 && (
+                    <span className="text-amber-600">
+                      {" "}
+                      {cost.components_without_cost} component
+                      {cost.components_without_cost === 1 ? "" : "s"} missing a cached
+                      cost — figures understated until set on the Costing screen.
+                    </span>
+                  )}
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-slate-400">No cost data.</p>
+            )}
+          </section>
         </div>
 
         <section className="card p-5">
@@ -173,5 +248,35 @@ function Field({ label, value }: { label: string; value: string }) {
       </dt>
       <dd className="mt-0.5 text-slate-700">{value}</dd>
     </div>
+  );
+}
+
+function CostTile({
+  label,
+  value,
+  tone = "flat",
+}: {
+  label: string;
+  value: string;
+  tone?: "flat" | "good" | "bad";
+}) {
+  const cls =
+    tone === "good" ? "text-emerald-600" : tone === "bad" ? "text-red-600" : "text-slate-900";
+  return (
+    <div className="rounded-md border border-slate-200 p-3">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</div>
+      <div className={`mt-1 text-lg font-semibold ${cls}`}>{value}</div>
+    </div>
+  );
+}
+
+function CostRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <tr>
+      <td className="py-1.5 pr-4 text-slate-500">{label}</td>
+      <td className={`py-1.5 text-right tabular-nums ${strong ? "font-semibold text-slate-800" : "text-slate-600"}`}>
+        {value}
+      </td>
+    </tr>
   );
 }
