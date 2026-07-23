@@ -22,7 +22,7 @@ export default async function AppLayout({
   return (
     <div className="flex min-h-screen">
       <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white md:block">
-        <Sidebar />
+        <Sidebar isAdmin={ctx.roles.includes("admin")} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">

@@ -44,8 +44,14 @@ const SECTIONS: NavSection[] = [
   },
 ];
 
-export function Sidebar() {
+const ADMIN_SECTION: NavSection = {
+  title: "Admin",
+  items: [{ href: "/admin/outbox", label: "Integration outbox" }],
+};
+
+export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
+  const sections = isAdmin ? [...SECTIONS, ADMIN_SECTION] : SECTIONS;
 
   return (
     <nav className="flex h-full flex-col gap-6 p-4">
@@ -64,7 +70,7 @@ export function Sidebar() {
       </div>
 
       <div className="flex flex-1 flex-col gap-5 overflow-y-auto">
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <div key={section.title}>
             <p className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
               {section.title}
