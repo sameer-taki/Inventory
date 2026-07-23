@@ -30,17 +30,50 @@ The app's runtime paths use only these two (client + server + middleware). The
 service-role key is **not** required for the app to run (no code path uses it);
 add `SUPABASE_SERVICE_ROLE_KEY` later only if you build system/service-role jobs.
 
-## Vercel — recommended: connect the GitHub repo (CI/CD)
+## Vercel — live ✅
 
-The maintainable production setup is to import the repo so every push builds:
+| | |
+|---|---|
+| Project | `inventory` (team `sameer-mohammed-s-projects`) |
+| Production URL | `https://inventory-rust-seven.vercel.app` |
+| Source | GitHub `sameer-taki/Inventory` (auto-deploys on push) |
+| Env vars | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (set) |
 
-1. Vercel → **Add New… → Project → Import** `sameer-taki/Inventory`.
-2. Framework preset: **Next.js** (auto-detected). Root directory: repo root.
-3. **Environment Variables** — add the two `NEXT_PUBLIC_SUPABASE_*` values above
-   (Production + Preview).
-4. **Deploy.**
-5. In Supabase → **Authentication → URL Configuration**, set **Site URL** and add
-   redirect URLs for the deployed Vercel domain(s).
+The project is Git-connected, so every push builds. Env values are read through
+`src/lib/supabase/env.ts`, which **trims** them — a stray space in an env var can
+no longer break the client.
 
-This gives automatic deploys on push to the branch. (A one-off file-tree deploy is
-also possible but produces a git-disconnected project that won't auto-update.)
+### Pending manual toggles (Vercel/GitHub UIs — no API available)
+
+1. **GitHub** → repo **Settings → General → Default branch** → set to `main`.
+2. **Vercel** → `inventory` → **Settings → Git → Production Branch** → set to `main`.
+
+`main` and the working branch are kept in sync, so production works either way;
+these just make `main` the canonical source going forward.
+
+## Authentication — URL configuration (required)
+
+In **Supabase → Authentication → URL Configuration** set:
+
+- **Site URL**: `https://inventory-rust-seven.vercel.app`
+- **Redirect URLs**: add `https://inventory-rust-seven.vercel.app/**`
+
+Without these, Supabase rejects the app's `redirectTo` and the password-reset /
+email links won't return to the app. (Add your custom domain here too when you
+add one.)
+
+## Password reset flow
+
+Self-serve reset is built into the app:
+
+| Route | Purpose |
+|---|---|
+| `/forgot-password` | Request a reset email (`resetPasswordForEmail`, public page). |
+| `/auth/callback` | Exchanges the PKCE recovery `code` for a session, then forwards. |
+| `/reset-password` | Authenticated (recovery-session) page to set a new password (`updateUser`). |
+
+The login page links to `/forgot-password` and surfaces callback errors. There is
+**no stored/known password** for any account — Supabase keeps only a one-way hash;
+the reset flow (or the dashboard) is the only way to set/change one. Recovery
+emails use Supabase's built-in mailer by default; configure custom SMTP for
+production volume.
