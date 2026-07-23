@@ -46,7 +46,10 @@ const SECTIONS: NavSection[] = [
 
 const ADMIN_SECTION: NavSection = {
   title: "Admin",
-  items: [{ href: "/admin/outbox", label: "Integration outbox" }],
+  items: [
+    { href: "/admin/outbox", label: "Integration outbox" },
+    { href: "/admin/audit", label: "Audit log" },
+  ],
 };
 
 export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
