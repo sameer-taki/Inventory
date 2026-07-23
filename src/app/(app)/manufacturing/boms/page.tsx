@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -56,9 +57,12 @@ export default async function BomsPage() {
               boms.map((b) => (
                 <tr key={b.bom_id}>
                   <td className="px-4 py-2.5">
-                    <span className="font-medium text-slate-700">
+                    <Link
+                      href={`/manufacturing/boms/${b.bom_id}`}
+                      className="font-medium text-gold-700 hover:underline"
+                    >
                       {itemMap.get(b.item_id)?.item_no ?? b.item_id}
-                    </span>
+                    </Link>
                     <span className="ml-2 text-slate-400">
                       {itemMap.get(b.item_id)?.description}
                     </span>
