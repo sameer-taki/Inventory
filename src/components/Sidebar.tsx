@@ -14,6 +14,7 @@ const SECTIONS: NavSection[] = [
   {
     title: "Quality · M1",
     items: [
+      { href: "/quality/dashboard", label: "Dashboard" },
       { href: "/quality/ncr", label: "NCRs" },
       { href: "/quality/capa", label: "CAPAs" },
     ],
@@ -27,6 +28,7 @@ const SECTIONS: NavSection[] = [
       { href: "/manufacturing/planning", label: "Planning (MRP)" },
       { href: "/manufacturing/boms", label: "BOMs" },
       { href: "/manufacturing/work-centres", label: "Work centres" },
+      { href: "/manufacturing/capacity", label: "Capacity" },
       { href: "/manufacturing/genealogy", label: "Genealogy" },
     ],
   },
@@ -37,6 +39,7 @@ const SECTIONS: NavSection[] = [
       { href: "/fleet/vehicles", label: "Vehicles" },
       { href: "/fleet/jobcards", label: "Job cards" },
       { href: "/fleet/renewals", label: "Renewals" },
+      { href: "/fleet/fuel-import", label: "Fuel import" },
     ],
   },
 ];

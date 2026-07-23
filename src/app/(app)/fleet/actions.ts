@@ -179,6 +179,64 @@ export async function transitionJobCardAction(
   return {};
 }
 
+export async function createFuelImportAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const sourceName = s(formData.get("source_name"));
+  const fileRef = s(formData.get("file_ref")) ?? "upload";
+  const rowsRaw = s(formData.get("rows"));
+  if (!sourceName) return { error: "A statement name is required." };
+  let rows: unknown;
+  try {
+    rows = JSON.parse(rowsRaw ?? "[]");
+  } catch {
+    return { error: "Could not parse the CSV rows." };
+  }
+  if (!Array.isArray(rows) || rows.length === 0)
+    return { error: "No rows found in the file." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.schema("fleet").rpc("create_fuel_import", {
+    p_source_name: sourceName,
+    p_file_ref: fileRef,
+    p_rows: rows,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/fleet/fuel-import");
+  return {};
+}
+
+export async function acceptFuelImportRowAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const id = num(formData.get("row_id"));
+  if (!id) return { error: "Missing row." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .schema("fleet")
+    .rpc("accept_fuel_import_row", { p_row_id: id });
+  if (error) return { error: error.message };
+  revalidatePath("/fleet/fuel-import");
+  return {};
+}
+
+export async function rejectFuelImportRowAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const id = num(formData.get("row_id"));
+  if (!id) return { error: "Missing row." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .schema("fleet")
+    .rpc("reject_fuel_import_row", { p_row_id: id, p_note: s(formData.get("note")) });
+  if (error) return { error: error.message };
+  revalidatePath("/fleet/fuel-import");
+  return {};
+}
+
 export async function runRemindersAction(): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.schema("fleet").rpc("run_reminders");
