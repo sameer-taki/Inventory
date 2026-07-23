@@ -46,6 +46,32 @@ export async function firmPlannedOrderAction(
   return {};
 }
 
+// ── MPS ─────────────────────────────────────────────────────────────────────
+export async function saveMpsEntryAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const itemId = n(formData.get("item_id"));
+  const plant = s(formData.get("plant"));
+  const bucket = s(formData.get("bucket_start"));
+  const qty = n(formData.get("qty"));
+  const kind = s(formData.get("kind"));
+  if (!itemId || !plant || !bucket || qty === null || !kind) {
+    return { error: "Item, plant, bucket start, quantity and kind are required." };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.schema("mfg").rpc("save_mps_entry", {
+    p_item_id: itemId,
+    p_plant: plant,
+    p_bucket_start: bucket,
+    p_qty: qty,
+    p_kind: kind,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/manufacturing/mps");
+  return {};
+}
+
 // ── Work centres ────────────────────────────────────────────────────────────
 export async function createWorkCentreAction(
   _prev: ActionState,
