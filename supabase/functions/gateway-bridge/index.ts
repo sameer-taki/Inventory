@@ -33,6 +33,10 @@ const BC_ODATA_AUTH = Deno.env.get("BC_ODATA_AUTH") ?? "";
 const BRIDGE_SECRET = Deno.env.get("BRIDGE_SECRET") ?? "";
 const BATCH = Number(Deno.env.get("BRIDGE_BATCH") ?? "20");
 const MAX_ATTEMPTS = Number(Deno.env.get("BRIDGE_MAX_ATTEMPTS") ?? "5");
+// D-3 posting vehicle: 'assembly_order' (Option A, default — native cost link)
+// or 'item_journal' (Option B, fallback). See docs/d3-bc-writeback.md. Switching
+// vehicles is a config flip, not a code change.
+const POSTING_MODE = (Deno.env.get("BC_POSTING_MODE") ?? "assembly_order").toLowerCase();
 
 type OutboxRow = {
   outbox_id: number;
@@ -72,45 +76,87 @@ async function resolveBcItems(itemIds: number[]): Promise<Map<number, string>> {
   return map;
 }
 
-/**
- * Build the BC posting document from an outbox row.
- * NOTE: field names below are the D-3 CONTRACT STUB (BC Assembly Order). Confirm
- * them against the real BC OData metadata before enabling deliver mode — the
- * shape is intentionally isolated here so only this function changes.
- */
-async function buildBcDocument(row: OutboxRow): Promise<Record<string, unknown>> {
-  if (row.aggregate_type === "mfg.completion") {
-    const p = row.payload as {
-      production_order_no: string;
-      output_item_id: number;
-      qty_good: number;
-      output_lot_no?: string;
-      location?: string;
-      posting_date?: string;
-      consumption?: Array<{ component_item_id: number; qty: number; uom: string; lot_no?: string }>;
-    };
-    const items = await resolveBcItems([
-      p.output_item_id,
-      ...(p.consumption ?? []).map((c) => c.component_item_id),
-    ]);
-    const outputBcNo = items.get(p.output_item_id);
-    if (!outputBcNo) throw new Error(`output item ${p.output_item_id} has no BC mapping (I10)`);
+type CompletionPayload = {
+  production_order_no: string;
+  output_item_id: number;
+  qty_good: number;
+  qty_scrap?: number;
+  output_lot_no?: string;
+  location?: string;
+  posting_date?: string;
+  consumption?: Array<{ component_item_id: number; qty: number; uom: string; lot_no?: string }>;
+};
 
-    return {
-      // — BC Assembly Order header (contract stub) —
+/** Option A — BC Assembly Order: one header (output) + component lines. Native
+ *  cost linkage (BC values the consumption and rolls the output cost). */
+function buildAssemblyOrder(p: CompletionPayload, items: Map<number, string>): Record<string, unknown> {
+  const outputBcNo = items.get(p.output_item_id);
+  if (!outputBcNo) throw new Error(`output item ${p.output_item_id} has no BC mapping (I10)`);
+  return {
+    Item_No: outputBcNo,
+    Quantity: p.qty_good,
+    Location_Code: p.location ?? null,
+    Posting_Date: p.posting_date ?? null,
+    External_Document_No: p.production_order_no,
+    Lot_No: p.output_lot_no ?? null,
+    Components: (p.consumption ?? []).map((c) => {
+      const bcNo = items.get(c.component_item_id);
+      if (!bcNo) throw new Error(`component ${c.component_item_id} has no BC mapping (I10)`);
+      return { Item_No: bcNo, Quantity: c.qty, Unit_of_Measure: c.uom, Lot_No: c.lot_no ?? null };
+    }),
+  };
+}
+
+/** Option B — Item Journal: a positive-adjustment output line + negative-
+ *  adjustment consumption lines. Simpler API surface; cost of goods produced
+ *  must be stamped by us (see docs/d3-bc-writeback.md). */
+function buildItemJournal(p: CompletionPayload, items: Map<number, string>): Record<string, unknown> {
+  const outputBcNo = items.get(p.output_item_id);
+  if (!outputBcNo) throw new Error(`output item ${p.output_item_id} has no BC mapping (I10)`);
+  const lines: Array<Record<string, unknown>> = [
+    {
+      Entry_Type: "Positive Adjmt.",
       Item_No: outputBcNo,
       Quantity: p.qty_good,
       Location_Code: p.location ?? null,
       Posting_Date: p.posting_date ?? null,
-      External_Document_No: p.production_order_no,
+      Document_No: p.production_order_no,
       Lot_No: p.output_lot_no ?? null,
-      // — component (material) lines —
-      Components: (p.consumption ?? []).map((c) => {
-        const bcNo = items.get(c.component_item_id);
-        if (!bcNo) throw new Error(`component ${c.component_item_id} has no BC mapping (I10)`);
-        return { Item_No: bcNo, Quantity: c.qty, Unit_of_Measure: c.uom, Lot_No: c.lot_no ?? null };
-      }),
-    };
+    },
+    ...(p.consumption ?? []).map((c) => {
+      const bcNo = items.get(c.component_item_id);
+      if (!bcNo) throw new Error(`component ${c.component_item_id} has no BC mapping (I10)`);
+      return {
+        Entry_Type: "Negative Adjmt.",
+        Item_No: bcNo,
+        Quantity: c.qty,
+        Unit_of_Measure_Code: c.uom,
+        Location_Code: p.location ?? null,
+        Posting_Date: p.posting_date ?? null,
+        Document_No: p.production_order_no,
+        Lot_No: c.lot_no ?? null,
+      };
+    }),
+  ];
+  return { Journal_Template_Name: "ITEM", Journal_Batch_Name: "PRODUCTION", Lines: lines };
+}
+
+/**
+ * Build the BC posting document from an outbox row. Field names are the D-3
+ * CONTRACT (see docs/d3-bc-writeback.md) — confirm against the real BC OData
+ * metadata before enabling deliver mode. The shape is isolated here so only this
+ * function changes; the posting vehicle is selected by BC_POSTING_MODE.
+ */
+async function buildBcDocument(row: OutboxRow): Promise<Record<string, unknown>> {
+  if (row.aggregate_type === "mfg.completion") {
+    const p = row.payload as CompletionPayload;
+    const items = await resolveBcItems([
+      p.output_item_id,
+      ...(p.consumption ?? []).map((c) => c.component_item_id),
+    ]);
+    return POSTING_MODE === "item_journal"
+      ? buildItemJournal(p, items)
+      : buildAssemblyOrder(p, items);
   }
   // other aggregate types get a generic passthrough until their contract lands
   return { event_type: row.event_type, payload: row.payload };
@@ -170,6 +216,7 @@ Deno.serve(async (req) => {
   if (dryRun) {
     return json({
       mode: "dry-run",
+      posting_mode: POSTING_MODE,
       reason: BC_ODATA_URL ? "dryRun=true" : "BC_ODATA_URL not set",
       would_deliver: batch.length,
       rows: batch.map((r) => ({
@@ -200,5 +247,5 @@ Deno.serve(async (req) => {
       results.push({ outbox_id: r.outbox_id, status: dead ? "dead" : "failed", error: String(err) });
     }
   }
-  return json({ mode: "deliver", processed: results.length, results });
+  return json({ mode: "deliver", posting_mode: POSTING_MODE, processed: results.length, results });
 });
