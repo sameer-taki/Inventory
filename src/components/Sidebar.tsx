@@ -39,6 +39,7 @@ const SECTIONS: NavSection[] = [
       { href: "/fleet/vehicles", label: "Vehicles" },
       { href: "/fleet/jobcards", label: "Job cards" },
       { href: "/fleet/renewals", label: "Renewals" },
+      { href: "/fleet/running-cost", label: "Running cost" },
       { href: "/fleet/fuel-import", label: "Fuel import" },
     ],
   },
