@@ -7,6 +7,7 @@ import { fmtDateTime } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 type Event = {
+  source: string;
   event_id: number;
   entity_type: string;
   entity_id: number;
@@ -18,6 +19,7 @@ type Event = {
 
 const CHIPS: { label: string; entity?: string; event?: string }[] = [
   { label: "All" },
+  { label: "Quality", entity: "quality." },
   { label: "Manufacturing", entity: "mfg." },
   { label: "Fleet", entity: "fleet." },
   { label: "Integration", entity: "ops.integration_outbox" },
@@ -49,8 +51,8 @@ export default async function AuditLogPage({
 
   let query = supabase
     .schema("ops")
-    .from("event_log")
-    .select("event_id, entity_type, entity_id, event_type, actor_id, detail, created_at")
+    .from("v_audit_log")
+    .select("source, event_id, entity_type, entity_id, event_type, actor_id, detail, created_at")
     .order("created_at", { ascending: false })
     .limit(250);
   if (entity) query = query.ilike("entity_type", `%${entity}%`);
@@ -125,7 +127,7 @@ export default async function AuditLogPage({
           <tbody className="divide-y divide-slate-100">
             {events && events.length > 0 ? (
               events.map((e) => (
-                <tr key={e.event_id} className="align-top">
+                <tr key={`${e.source}-${e.event_id}`} className="align-top">
                   <td className="whitespace-nowrap px-3 py-2 text-slate-500">
                     {fmtDateTime(e.created_at)}
                   </td>
