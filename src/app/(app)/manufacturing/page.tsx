@@ -1,157 +1,184 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/PageHeader";
-import { fmtFjd } from "@/lib/format";
+import { StatTile } from "@/components/StatTile";
+import { StatusBadge } from "@/components/StatusBadge";
+import { fmtFjd, fmtDate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-const BUILD = [
-  { m: "M3", name: "BOMs / routings / work centres", note: "maintenance UI + versioning (ECO-lite); migration loads" },
-  { m: "M2", name: "Production orders + shop-floor execution", note: "D-3 write-back spike first (assembly order vs item journal)" },
-  { m: "M4", name: "MRP / MPS netting engine", note: "golden-dataset harness is the first ticket; validated hardest" },
-  { m: "M5", name: "Capacity scheduling", note: "advisory load view first" },
-  { m: "M6", name: "Lot/serial genealogy", note: "append-only edges from first M2 posting; mock-recall drill" },
-];
+type Summary = {
+  open_orders: number;
+  released_orders: number;
+  in_progress_orders: number;
+  completed_orders: number;
+  wip_actual_cost: number;
+  total_variance_fjd: number;
+};
+type PO = {
+  production_order_id: number;
+  order_no: string;
+  item_id: number;
+  qty_ordered: number;
+  qty_completed: number;
+  uom: string;
+  status: string;
+  due_date: string;
+};
+type Cost = {
+  production_order_id: number;
+  actual_total_cost: number;
+  variance_fjd: number;
+  qty_completed: number;
+};
 
 export default async function ManufacturingPage() {
   const supabase = await createClient();
-  const [{ data: workCentres }, { data: items }] = await Promise.all([
-    supabase
-      .schema("mfg")
-      .from("work_centres")
-      .select("code, name, plant, daily_capacity, labour_rate, is_active")
-      .order("code")
-      .returns<
-        {
-          code: string;
-          name: string;
-          plant: string;
-          daily_capacity: number;
-          labour_rate: number | null;
-          is_active: boolean;
-        }[]
-      >(),
-    supabase
-      .schema("ops")
-      .from("items")
-      .select("item_no, description, make_or_buy, item_category")
-      .order("item_no")
-      .returns<
-        {
-          item_no: string;
-          description: string;
-          make_or_buy: string | null;
-          item_category: string | null;
-        }[]
-      >(),
-  ]);
+  const [{ data: summary }, { data: orders }, { data: costs }, { data: items }] =
+    await Promise.all([
+      supabase
+        .schema("mfg")
+        .from("v_production_summary")
+        .select("open_orders, released_orders, in_progress_orders, completed_orders, wip_actual_cost, total_variance_fjd")
+        .maybeSingle<Summary>(),
+      supabase
+        .schema("mfg")
+        .from("production_orders")
+        .select("production_order_id, order_no, item_id, qty_ordered, qty_completed, uom, status, due_date")
+        .not("status", "in", "(closed,cancelled)")
+        .order("due_date")
+        .limit(12)
+        .returns<PO[]>(),
+      supabase
+        .schema("mfg")
+        .from("v_po_cost")
+        .select("production_order_id, actual_total_cost, variance_fjd, qty_completed")
+        .returns<Cost[]>(),
+      supabase
+        .schema("ops")
+        .from("items")
+        .select("item_id, item_no")
+        .returns<{ item_id: number; item_no: string }[]>(),
+    ]);
+  const costMap = new Map((costs ?? []).map((c) => [c.production_order_id, c]));
+  const itemMap = new Map((items ?? []).map((i) => [i.item_id, i.item_no]));
+
+  const variance = Number(summary?.total_variance_fjd ?? 0);
 
   return (
     <div>
       <PageHeader
         title="Manufacturing"
-        subtitle="MAX replacement — the Premium-only manufacturing slice, built as platform modules. Schema is laid; module UIs follow the locked build order."
+        subtitle="MAX replacement — live production. BC Essentials stays the inventory + costing master (I1); every posting goes through the outbox (I2); all costing math is deterministic SQL (I4)."
       />
 
-      <div className="mb-6 rounded-md border border-gold-200 bg-gold-50 p-4 text-sm text-gold-900">
-        <p className="font-medium">Scope guardrails (invariants):</p>
-        <ul className="mt-1 list-inside list-disc space-y-0.5 text-gold-800">
-          <li>BC Essentials stays the inventory + costing master (I1). If a quantity disagrees with BC, BC is right.</li>
-          <li>Every BC posting goes through the outbox with an idempotency key (I2); no direct OData writes.</li>
-          <li>Corrugated stays in Kiwiplan; the mfg BOM never mirrors it (I5).</li>
-          <li>All planning/costing math is deterministic SQL/Python (I4).</li>
-        </ul>
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile
+          label="Open orders"
+          value={summary?.open_orders ?? 0}
+          hint={`${summary?.in_progress_orders ?? 0} in progress · ${summary?.released_orders ?? 0} released`}
+        />
+        <StatTile label="Completed" value={summary?.completed_orders ?? 0} />
+        <StatTile label="WIP cost booked" value={fmtFjd(summary?.wip_actual_cost ?? 0)} />
+        <StatTile
+          label="Cost variance"
+          value={`${variance > 0 ? "+" : ""}${fmtFjd(variance)}`}
+          tone={variance > 0.005 ? "danger" : variance < -0.005 ? "good" : "default"}
+          hint={variance > 0 ? "over standard" : variance < 0 ? "under standard" : "on standard"}
+        />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="card p-5">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">
-            Work centres
-          </h2>
-          {workCentres && workCentres.length > 0 ? (
-            <table className="min-w-full text-sm">
-              <thead className="text-left text-xs uppercase text-slate-400">
-                <tr>
-                  <th className="py-1.5 pr-4">Code</th>
-                  <th className="py-1.5 pr-4">Name</th>
-                  <th className="py-1.5 pr-4">Plant</th>
-                  <th className="py-1.5 pr-4">Cap/day</th>
-                  <th className="py-1.5">Rate</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {workCentres.map((w) => (
-                  <tr key={w.code}>
-                    <td className="py-1.5 pr-4 font-medium text-slate-700">
-                      {w.code}
+      <section className="card mb-6 overflow-x-auto">
+        <div className="flex items-center justify-between p-5 pb-3">
+          <h2 className="text-sm font-semibold text-slate-700">Active production orders</h2>
+          <div className="flex gap-3 text-xs">
+            <Link href="/manufacturing/shopfloor" className="text-gold-700 hover:underline">Shop floor →</Link>
+            <Link href="/manufacturing/production" className="text-gold-700 hover:underline">All orders →</Link>
+          </div>
+        </div>
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+            <tr>
+              <th className="px-4 py-2.5">Order</th>
+              <th className="px-4 py-2.5">Item</th>
+              <th className="px-4 py-2.5">Progress</th>
+              <th className="px-4 py-2.5">Status</th>
+              <th className="px-4 py-2.5">Due</th>
+              <th className="px-4 py-2.5 text-right">Actual cost</th>
+              <th className="px-4 py-2.5 text-right">Variance</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {orders && orders.length > 0 ? (
+              orders.map((po) => {
+                const c = costMap.get(po.production_order_id);
+                const v = Number(c?.variance_fjd ?? 0);
+                const hasOutput = Number(c?.qty_completed ?? 0) > 0;
+                return (
+                  <tr key={po.production_order_id}>
+                    <td className="px-4 py-2.5">
+                      <Link
+                        href={`/manufacturing/production/${po.production_order_id}`}
+                        className="font-medium text-gold-700 hover:underline"
+                      >
+                        {po.order_no}
+                      </Link>
                     </td>
-                    <td className="py-1.5 pr-4 text-slate-600">{w.name}</td>
-                    <td className="py-1.5 pr-4 text-slate-500">{w.plant}</td>
-                    <td className="py-1.5 pr-4 text-slate-500">
-                      {w.daily_capacity}
+                    <td className="px-4 py-2.5 text-slate-600">{itemMap.get(po.item_id) ?? po.item_id}</td>
+                    <td className="px-4 py-2.5 text-slate-500">
+                      {po.qty_completed} / {po.qty_ordered} {po.uom}
                     </td>
-                    <td className="py-1.5 text-slate-500">
-                      {w.labour_rate ? fmtFjd(w.labour_rate) : "—"}
+                    <td className="px-4 py-2.5">
+                      <StatusBadge value={po.status} />
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-500">{fmtDate(po.due_date)}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">
+                      {hasOutput ? fmtFjd(c!.actual_total_cost) : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {hasOutput ? (
+                        <span className={v > 0.005 ? "text-red-600" : v < -0.005 ? "text-emerald-600" : "text-slate-500"}>
+                          {v > 0 ? "+" : ""}
+                          {fmtFjd(v)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="py-4 text-sm text-slate-400">
-              No work centres yet — seeded during M3 masters migration.
-            </p>
-          )}
-        </section>
-
-        <section className="card p-5">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">
-            Canonical items{" "}
-            <span className="font-normal text-slate-400">
-              (mirror of BC master)
-            </span>
-          </h2>
-          {items && items.length > 0 ? (
-            <ul className="divide-y divide-slate-100 text-sm">
-              {items.map((it) => (
-                <li key={it.item_no} className="flex justify-between py-1.5">
-                  <span>
-                    <span className="font-medium text-slate-700">
-                      {it.item_no}
-                    </span>{" "}
-                    <span className="text-slate-500">{it.description}</span>
-                  </span>
-                  <span className="text-xs uppercase text-slate-400">
-                    {it.make_or_buy ?? ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="py-4 text-sm text-slate-400">
-              No items yet — synced from BC via the gateway adapter.
-            </p>
-          )}
-        </section>
-      </div>
-
-      <section className="card mt-6 p-5">
-        <h2 className="mb-3 text-sm font-semibold text-slate-700">
-          Build order (locked, MAX plan §5)
-        </h2>
-        <ul className="space-y-2 text-sm">
-          {BUILD.map((b) => (
-            <li key={b.m} className="flex gap-3">
-              <span className="w-10 shrink-0 font-mono text-xs text-slate-400">
-                {b.m}
-              </span>
-              <span>
-                <span className="font-medium text-slate-700">{b.name}</span>
-                <span className="text-slate-500"> — {b.note}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
+                  No active production orders. Create one from Production.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </section>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <QuickLink href="/manufacturing/production" title="Production orders" note="Create, release, complete" />
+        <QuickLink href="/manufacturing/shopfloor" title="Shop floor" note="Operator completion + labour" />
+        <QuickLink href="/manufacturing/planning" title="Planning (MRP)" note="Netting + action messages" />
+        <QuickLink href="/manufacturing/boms" title="BOMs" note="Versioned, ECO-lite" />
+        <QuickLink href="/manufacturing/routings" title="Routings" note="Operations over work centres" />
+        <QuickLink href="/manufacturing/costs" title="Standard costs" note="BC-cached, feeds the roll-up" />
+        <QuickLink href="/manufacturing/capacity" title="Capacity" note="Advisory work-centre load" />
+        <QuickLink href="/manufacturing/genealogy" title="Genealogy" note="Lot trace / recall" />
+        <QuickLink href="/manufacturing/mps" title="MPS" note="Master schedule demand" />
+      </div>
     </div>
+  );
+}
+
+function QuickLink({ href, title, note }: { href: string; title: string; note: string }) {
+  return (
+    <Link href={href} className="card p-4 transition hover:border-gold-400 hover:shadow-sm">
+      <div className="font-medium text-slate-800">{title}</div>
+      <div className="mt-0.5 text-xs text-slate-400">{note}</div>
+    </Link>
   );
 }
