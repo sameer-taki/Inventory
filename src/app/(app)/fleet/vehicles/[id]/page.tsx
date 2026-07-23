@@ -31,11 +31,15 @@ type FuelSummary = {
   avg_cost_per_unit_fjd: number | null;
 };
 type Segment = {
+  fuel_log_id: number;
   filled_at: string;
   distance_or_hours: number;
   litres: number;
   per_100_units: number | null;
   cost_per_unit_fjd: number | null;
+  baseline_per_100_units: number | null;
+  deviation_pct: number | null;
+  is_anomaly: boolean;
 };
 type MonthlyCost = {
   month: string;
@@ -132,8 +136,10 @@ export default async function VehicleDetail({
         .maybeSingle<FuelSummary>(),
       supabase
         .schema("fleet")
-        .from("v_consumption")
-        .select("filled_at, distance_or_hours, litres, per_100_units, cost_per_unit_fjd")
+        .from("v_consumption_anomaly")
+        .select(
+          "fuel_log_id, filled_at, distance_or_hours, litres, per_100_units, cost_per_unit_fjd, baseline_per_100_units, deviation_pct, is_anomaly",
+        )
         .eq("vehicle_id", vid)
         .order("filled_at", { ascending: false })
         .limit(8)
@@ -325,21 +331,50 @@ export default async function VehicleDetail({
                           <th className="py-1.5 pr-4">{titleCase(unit)}</th>
                           <th className="py-1.5 pr-4">Litres</th>
                           <th className="py-1.5 pr-4">L / 100 {unitShort(unit)}</th>
-                          <th className="py-1.5">FJD / {unitShort(unit)}</th>
+                          <th className="py-1.5 pr-4">FJD / {unitShort(unit)}</th>
+                          <th className="py-1.5">vs baseline</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {segments.map((s, i) => (
-                          <tr key={i}>
+                        {segments.map((s) => (
+                          <tr key={s.fuel_log_id} className={s.is_anomaly ? "bg-amber-50/60" : ""}>
                             <td className="py-1.5 pr-4 text-slate-500">{fmtDate(s.filled_at)}</td>
                             <td className="py-1.5 pr-4 text-slate-600">{s.distance_or_hours}</td>
                             <td className="py-1.5 pr-4 text-slate-600">{s.litres}</td>
-                            <td className="py-1.5 pr-4 text-slate-600">{s.per_100_units ?? "—"}</td>
-                            <td className="py-1.5 text-slate-600">{s.cost_per_unit_fjd ?? "—"}</td>
+                            <td className="py-1.5 pr-4 text-slate-600">
+                              {s.per_100_units ?? "—"}
+                              {s.is_anomaly && (
+                                <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800">
+                                  review
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-1.5 pr-4 text-slate-600">{s.cost_per_unit_fjd ?? "—"}</td>
+                            <td className="py-1.5 text-slate-500">
+                              {s.deviation_pct != null ? (
+                                <span
+                                  className={
+                                    s.is_anomaly
+                                      ? "font-medium text-amber-700"
+                                      : "text-slate-400"
+                                  }
+                                >
+                                  {s.deviation_pct > 0 ? "+" : ""}
+                                  {s.deviation_pct}%
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                    <p className="mt-2 text-xs text-slate-400">
+                      &ldquo;Review&rdquo; flags a segment whose efficiency deviates ≥ 25% from this
+                      vehicle&rsquo;s own baseline (needs ≥ 3 segments) — a possible leak, hard use,
+                      or a mis-recorded fill (F4).
+                    </p>
                   </div>
                 )}
 
