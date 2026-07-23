@@ -10,10 +10,22 @@
 | API URL | `https://jvthwlypnwfcpgrnxqkh.supabase.co` |
 | Plan cost | ~US$10/month (org `wjgywgazknunhztizhac`) |
 
-**Applied:** migrations `0001`–`0008`, demo/bootstrap seed, and the exposed-schemas
+**Applied:** migrations `0001`–`0020`, demo/bootstrap seed, and the exposed-schemas
 setting (`public, graphql_public, ops, quality, mfg, fleet` on the `authenticator`
 role). Verified live: 4 users, 3 items, 3 NCRs, 1 CAPA, 3 work centres, 2 vehicles,
 4 renewals.
+
+**Scheduled jobs (pg_cron):**
+
+| Job | Schedule (UTC) | Local | Command |
+|---|---|---|---|
+| `fleet-renewals-sweep` | `0 18 * * *` | 06:00 Fiji | `SELECT fleet.run_reminders_system();` |
+
+`run_reminders_system()` is `SECURITY DEFINER` and **revoked from `PUBLIC`** so the
+browser/API can never reach the ungated sweep; the role-gated `fleet.run_reminders()`
+(used by the "Run now" button on `/fleet/renewals`) is the only client path. Each
+run appends a `fleet.reminders` event (`source: cron|manual`) — visible in the audit
+log with actor `system` for cron runs.
 
 **Admin bootstrap:** `sameer@golden.com.fj` is pre-provisioned with the `admin`
 role. Sign up in the app with that email (Supabase Auth) and the trigger links +

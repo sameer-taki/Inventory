@@ -42,12 +42,13 @@ export default async function RenewalsPage() {
           <h1 className="text-xl font-semibold text-slate-900">Renewals</h1>
           <p className="mt-1 text-sm text-slate-500">
             LTA registration, fitness (CoF), insurance, statutory plant
-            inspections. The reminder engine escalates due/overdue items.
+            inspections. The reminder engine escalates due/overdue items
+            automatically each night (06:00 Fiji); use the button to run it now.
           </p>
         </div>
         <form action={runRemindersAction}>
           <button type="submit" className="btn-secondary">
-            Run reminder engine
+            Run now
           </button>
         </form>
       </div>
