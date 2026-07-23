@@ -19,6 +19,7 @@ enqueues rows (e.g. `mfg.post_completion`).
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | auto-injected by the Edge runtime |
 | `BC_ODATA_URL` | BC OData endpoint that creates the posting document; unset ⇒ dry-run |
 | `BC_ODATA_AUTH` | value for the `Authorization` header to BC (e.g. `Basic …`) |
+| `BC_POSTING_MODE` | `assembly_order` (default, Option A) or `item_journal` (Option B) — see `docs/d3-bc-writeback.md` |
 | `BRIDGE_SECRET` | shared secret required for deliver mode |
 | `BRIDGE_BATCH` | rows per invocation (default 20) |
 | `BRIDGE_MAX_ATTEMPTS` | attempts before a row is marked `dead` (default 5) |
@@ -42,13 +43,27 @@ curl -s "$SUPABASE_URL/functions/v1/gateway-bridge?dryRun=true" \
 #       headers:='{"x-bridge-secret":"<secret>"}'::jsonb) $$);
 ```
 
-## BC contract (D-3, stub)
-`buildBcDocument()` maps an `mfg.completion` outbox payload to a BC **Assembly
-Order** (output item + quantity + lot on the header, consumed materials as
-component lines). Item numbers are resolved to BC item nos via
-`ops.external_refs` (**I10**) at delivery time. The BC field names are a stub —
-confirm them against the real BC OData metadata before enabling deliver mode;
-the mapping is isolated to this one function so nothing else changes.
+## BC contract (D-3)
+The full contract — decision (Assembly Order primary, Item Journal fallback),
+both payload shapes, idempotency, and finalisation — is in
+**`docs/d3-bc-writeback.md`**. `buildBcDocument()` resolves canonical item_ids to
+BC item nos via `ops.external_refs` (**I10**) and dispatches on `BC_POSTING_MODE`
+to `buildAssemblyOrder()` (A) or `buildItemJournal()` (B). Field names are a
+contract stub — confirm against the real BC OData `$metadata` before enabling
+deliver mode; only these two builder functions change.
+
+## Testing without on-prem BC
+`supabase/functions/bc-mock` emulates the BC OData create (returns a synthetic
+`Document_No`; `?fail=true` forces a 500 to exercise the retry path). Deploy it,
+point `BC_ODATA_URL` at its URL, set `BRIDGE_SECRET`, and invoke the bridge in
+deliver mode to run the whole loop end-to-end. **Never point production at
+`bc-mock`** — it does no accounting.
+```bash
+supabase functions deploy bc-mock
+# then, for a staging bridge only:
+supabase secrets set BC_ODATA_URL="https://<ref>.functions.supabase.co/bc-mock" \
+  BRIDGE_SECRET="$(openssl rand -hex 24)"
+```
 
 ## Isolation to the LAN
 BC lives on-prem (172.16.1.10). Supabase Edge egress must be able to reach the
