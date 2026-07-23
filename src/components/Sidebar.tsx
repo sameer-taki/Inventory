@@ -24,6 +24,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { href: "/manufacturing", label: "Overview", exact: true },
       { href: "/manufacturing/production", label: "Production orders" },
+      { href: "/manufacturing/shopfloor", label: "Shop floor" },
       { href: "/manufacturing/mps", label: "MPS" },
       { href: "/manufacturing/planning", label: "Planning (MRP)" },
       { href: "/manufacturing/boms", label: "BOMs" },

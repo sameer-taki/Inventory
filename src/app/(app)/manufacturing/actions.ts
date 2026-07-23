@@ -112,6 +112,42 @@ export async function createWorkCentreAction(
   redirect("/manufacturing/work-centres");
 }
 
+// ── Shop floor ────────────────────────────────────────────────────────────
+export async function postShopfloorCompletionAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const id = n(formData.get("po_id"));
+  const qtyGood = n(formData.get("qty_good"));
+  const qtyScrap = n(formData.get("qty_scrap")) ?? 0;
+  const location = s(formData.get("bc_location"));
+  const outputLot = s(formData.get("output_lot_no"));
+  if (!id || qtyGood === null || !location)
+    return { error: "Quantity produced and BC location are required." };
+  let consumption: unknown;
+  let labour: unknown;
+  try {
+    consumption = JSON.parse(s(formData.get("consumption")) ?? "[]");
+    labour = JSON.parse(s(formData.get("labour")) ?? "[]");
+  } catch {
+    return { error: "Consumption or labour lines are malformed." };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.schema("mfg").rpc("post_shopfloor_completion", {
+    p_po_id: id,
+    p_qty_good: qtyGood,
+    p_qty_scrap: qtyScrap,
+    p_consumption: consumption,
+    p_bc_location: location,
+    p_output_lot_no: outputLot,
+    p_labour: labour,
+  });
+  if (error) return { error: error.message };
+  revalidatePath(`/manufacturing/production/${id}`);
+  revalidatePath("/manufacturing/shopfloor");
+  redirect(`/manufacturing/production/${id}`);
+}
+
 // ── Costing ─────────────────────────────────────────────────────────────────
 export async function setItemCostAction(
   _prev: ActionState,
