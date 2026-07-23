@@ -20,6 +20,17 @@ role). Verified live: 4 users, 3 items, 3 NCRs, 1 CAPA, 3 work centres, 2 vehicl
 | Job | Schedule (UTC) | Local | Command |
 |---|---|---|---|
 | `fleet-renewals-sweep` | `0 18 * * *` | 06:00 Fiji | `SELECT fleet.run_reminders_system();` |
+| `gateway-bridge-drain` | `*/5 * * * *` | every 5 min | `net.http_post` → `gateway-bridge` edge function |
+
+`gateway-bridge-drain` (via `pg_net`) invokes the delivery worker to drain
+`ops.integration_outbox`. It runs **keyless** (the function is deployed
+`verify_jwt=false`) and, while `BC_ODATA_URL` is unset, is a **safe dry-run**
+(read-only; reports what would be delivered, mutates nothing). The bridge runs
+as `service_role`, which was granted `USAGE` on `ops` + `SELECT` on
+`integration_outbox`/`external_refs` (migration `0023`). To enable real BC
+delivery: set the `BC_ODATA_URL`/`BC_ODATA_AUTH`/`BRIDGE_SECRET` function
+secrets, then re-schedule the job adding the `x-bridge-secret` header (exact SQL
+is in migration `0023`'s header comment). See `docs/d3-bc-writeback.md`.
 
 `run_reminders_system()` is `SECURITY DEFINER` and **revoked from `PUBLIC`** so the
 browser/API can never reach the ungated sweep; the role-gated `fleet.run_reminders()`
