@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { SUPABASE_URL } from "./env";
 
 /**
  * Service-role client — bypasses RLS. SERVER ONLY.
@@ -10,8 +11,8 @@ import { createClient } from "@supabase/supabase-js";
  */
 export function createServiceClient() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    SUPABASE_URL,
+    (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim(),
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 }
