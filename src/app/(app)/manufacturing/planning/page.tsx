@@ -4,6 +4,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { fmtDate, fmtDateTime, titleCase } from "@/lib/format";
 import { runMrpAction } from "../actions";
 import { FirmButton } from "./FirmButton";
+import { ActionMessageButtons } from "./ActionMessageButtons";
 
 export const dynamic = "force-dynamic";
 
@@ -180,15 +181,23 @@ export default async function PlanningPage() {
                 <ul className="space-y-2 text-sm">
                   {actions.map((a) => (
                     <li key={a.action_id} className="rounded-md bg-amber-50 p-2">
-                      <span className="font-medium text-amber-800">
-                        {titleCase(a.kind)}
-                      </span>{" "}
-                      <span className="text-amber-700">
-                        {a.target_type.replace(/_/g, " ")} {a.target_ref}
-                      </span>
+                      <div className="flex items-center justify-between gap-2">
+                        <span>
+                          <span className="font-medium text-amber-800">
+                            {titleCase(a.kind)}
+                          </span>{" "}
+                          <span className="text-amber-700">
+                            {a.target_type.replace(/_/g, " ")} {a.target_ref}
+                          </span>
+                        </span>
+                        <StatusBadge value={a.status === "open" ? "open" : a.status} />
+                      </div>
                       <div className="text-xs text-amber-600">
                         {JSON.stringify(a.detail)}
                       </div>
+                      {a.status === "open" && (
+                        <ActionMessageButtons actionId={a.action_id} />
+                      )}
                     </li>
                   ))}
                 </ul>

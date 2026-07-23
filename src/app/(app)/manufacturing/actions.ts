@@ -72,6 +72,22 @@ export async function saveMpsEntryAction(
   return {};
 }
 
+export async function actionMessageAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const id = n(formData.get("action_id"));
+  const to = s(formData.get("to_status"));
+  if (!id || !to) return { error: "Missing action message or status." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .schema("mfg")
+    .rpc("action_message_transition", { p_action_id: id, p_to_status: to });
+  if (error) return { error: error.message };
+  revalidatePath("/manufacturing/planning");
+  return {};
+}
+
 // ── Work centres ────────────────────────────────────────────────────────────
 export async function createWorkCentreAction(
   _prev: ActionState,
