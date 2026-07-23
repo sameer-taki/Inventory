@@ -132,6 +132,53 @@ export async function completeRenewalAction(
   return {};
 }
 
+export async function openJobCardAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const vehicleId = num(formData.get("vehicle_id"));
+  const kind = s(formData.get("kind"));
+  const description = s(formData.get("description"));
+  const workshop = s(formData.get("workshop"));
+  if (!vehicleId || !kind || !description || !workshop) {
+    return { error: "Vehicle, kind, description and workshop are required." };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.schema("fleet").rpc("open_job_card", {
+    p_vehicle_id: vehicleId,
+    p_kind: kind,
+    p_description: description,
+    p_workshop: workshop,
+    p_vendor_name: s(formData.get("vendor_name")),
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/fleet/jobcards");
+  return {};
+}
+
+export async function transitionJobCardAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const jobId = num(formData.get("job_id"));
+  const to = s(formData.get("to_status"));
+  if (!jobId || !to) return { error: "Missing job card or target status." };
+  const supabase = await createClient();
+  const { error } = await supabase.schema("fleet").rpc("transition_job_card", {
+    p_job_id: jobId,
+    p_to_status: to,
+    p_note: s(formData.get("note")),
+    p_parts_cost: num(formData.get("parts_cost")),
+    p_labour_cost: num(formData.get("labour_cost")),
+    p_downtime_hours: num(formData.get("downtime_hours")),
+    p_po_ref: s(formData.get("po_ref")),
+    p_invoice_ref: s(formData.get("invoice_ref")),
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/fleet/jobcards");
+  return {};
+}
+
 export async function runRemindersAction(): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.schema("fleet").rpc("run_reminders");

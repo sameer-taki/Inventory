@@ -23,9 +23,11 @@ const SECTIONS: NavSection[] = [
     items: [
       { href: "/manufacturing", label: "Overview", exact: true },
       { href: "/manufacturing/production", label: "Production orders" },
+      { href: "/manufacturing/mps", label: "MPS" },
       { href: "/manufacturing/planning", label: "Planning (MRP)" },
       { href: "/manufacturing/boms", label: "BOMs" },
       { href: "/manufacturing/work-centres", label: "Work centres" },
+      { href: "/manufacturing/genealogy", label: "Genealogy" },
     ],
   },
   {
@@ -33,6 +35,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { href: "/fleet", label: "Overview", exact: true },
       { href: "/fleet/vehicles", label: "Vehicles" },
+      { href: "/fleet/jobcards", label: "Job cards" },
       { href: "/fleet/renewals", label: "Renewals" },
     ],
   },

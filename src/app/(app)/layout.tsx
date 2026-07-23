@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { getSessionContext } from "@/lib/auth";
@@ -40,11 +41,19 @@ export default async function AppLayout({
               </span>
             )}
           </div>
-          <form action="/auth/signout" method="post">
-            <button type="submit" className="btn-secondary py-1.5 text-xs">
-              Sign out
-            </button>
-          </form>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/account/password"
+              className="btn-secondary py-1.5 text-xs"
+            >
+              Account
+            </Link>
+            <form action="/auth/signout" method="post">
+              <button type="submit" className="btn-secondary py-1.5 text-xs">
+                Sign out
+              </button>
+            </form>
+          </div>
         </header>
         <main className="flex-1 overflow-y-auto px-6 py-6">{children}</main>
       </div>
