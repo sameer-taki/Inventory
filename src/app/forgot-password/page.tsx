@@ -19,8 +19,16 @@ export default function ForgotPasswordPage() {
       redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
     });
     setBusy(false);
-    if (error) setError(error.message);
-    else setSent(true);
+    if (error) {
+      const raw = (error as { message?: unknown }).message;
+      const msg =
+        typeof raw === "string" && raw.trim().length
+          ? raw
+          : "We couldn't send the reset email — the mail service may be misconfigured (check the Supabase SMTP settings and that the Resend sender domain is verified).";
+      setError(msg);
+    } else {
+      setSent(true);
+    }
   }
 
   return (
