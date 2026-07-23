@@ -112,6 +112,50 @@ export async function createWorkCentreAction(
   redirect("/manufacturing/work-centres");
 }
 
+// ── Routings ────────────────────────────────────────────────────────────────
+export async function createRoutingAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const itemId = n(formData.get("item_id"));
+  const effectiveFrom = s(formData.get("effective_from"));
+  const opsRaw = s(formData.get("operations"));
+  if (!itemId || !effectiveFrom) return { error: "Item and effective-from are required." };
+  let operations: unknown;
+  try {
+    operations = JSON.parse(opsRaw ?? "[]");
+  } catch {
+    return { error: "Operations are malformed." };
+  }
+  if (!Array.isArray(operations) || operations.length === 0)
+    return { error: "Add at least one operation." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema("mfg").rpc("create_routing", {
+    p_item_id: itemId,
+    p_effective_from: effectiveFrom,
+    p_operations: operations,
+  });
+  if (error) return { error: error.message };
+  const r = row<{ routing_id: number }>(data);
+  revalidatePath("/manufacturing/routings");
+  redirect(`/manufacturing/routings/${r.routing_id}`);
+}
+
+export async function approveRoutingAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const id = n(formData.get("routing_id"));
+  if (!id) return { error: "Missing routing." };
+  const supabase = await createClient();
+  const { error } = await supabase.schema("mfg").rpc("approve_routing", { p_routing_id: id });
+  if (error) return { error: error.message };
+  revalidatePath("/manufacturing/routings");
+  revalidatePath(`/manufacturing/routings/${id}`);
+  return {};
+}
+
 // ── BOMs ──────────────────────────────────────────────────────────────────
 export async function createBomAction(
   _prev: ActionState,
