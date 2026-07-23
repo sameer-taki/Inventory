@@ -44,6 +44,11 @@ const SECTIONS: NavSection[] = [
   },
 ];
 
+const FLEET_ADMIN_ITEM: { section: string; item: NavItem } = {
+  section: "Fleet · F0–F3",
+  item: { href: "/fleet/drivers", label: "Drivers" },
+};
+
 const ADMIN_SECTION: NavSection = {
   title: "Admin",
   items: [
@@ -52,9 +57,23 @@ const ADMIN_SECTION: NavSection = {
   ],
 };
 
-export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
+export function Sidebar({
+  isAdmin = false,
+  isFleetAdmin = false,
+}: {
+  isAdmin?: boolean;
+  isFleetAdmin?: boolean;
+}) {
   const pathname = usePathname();
-  const sections = isAdmin ? [...SECTIONS, ADMIN_SECTION] : SECTIONS;
+  let sections = SECTIONS;
+  if (isFleetAdmin) {
+    sections = sections.map((s) =>
+      s.title === FLEET_ADMIN_ITEM.section
+        ? { ...s, items: [...s.items, FLEET_ADMIN_ITEM.item] }
+        : s,
+    );
+  }
+  if (isAdmin) sections = [...sections, ADMIN_SECTION];
 
   return (
     <nav className="flex h-full flex-col gap-6 p-4">
