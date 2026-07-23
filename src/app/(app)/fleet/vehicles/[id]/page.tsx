@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionContext } from "@/lib/auth";
 import { StatusBadge } from "@/components/StatusBadge";
+import { StatTile } from "@/components/StatTile";
 import { fmtDate, fmtDateTime, fmtFjd, titleCase } from "@/lib/format";
 import { MeterForm, FuelForm, RenewalForm } from "./VehicleForms";
 import { AssignForm, EndAssignmentForm } from "./AssignmentForms";
@@ -16,6 +17,31 @@ type Assignment = {
   assigned_from: string;
   assigned_to: string | null;
   note: string | null;
+};
+
+type FuelSummary = {
+  meter_kind: string;
+  fill_count: number;
+  total_litres: number;
+  total_fuel_fjd: number;
+  first_fill: string | null;
+  last_fill: string | null;
+  units_measured: number;
+  avg_per_100_units: number | null;
+  avg_cost_per_unit_fjd: number | null;
+};
+type Segment = {
+  filled_at: string;
+  distance_or_hours: number;
+  litres: number;
+  per_100_units: number | null;
+  cost_per_unit_fjd: number | null;
+};
+type MonthlyCost = {
+  month: string;
+  fuel_fjd: number;
+  parts_fjd: number;
+  labour_fjd: number;
 };
 
 type Vehicle = {
@@ -93,6 +119,37 @@ export default async function VehicleDetail({
         .limit(10)
         .returns<Assignment[]>(),
     ]);
+
+  const [{ data: fuelSummary }, { data: segments }, { data: monthly }] =
+    await Promise.all([
+      supabase
+        .schema("fleet")
+        .from("v_vehicle_fuel_summary")
+        .select(
+          "meter_kind, fill_count, total_litres, total_fuel_fjd, first_fill, last_fill, units_measured, avg_per_100_units, avg_cost_per_unit_fjd",
+        )
+        .eq("vehicle_id", vid)
+        .maybeSingle<FuelSummary>(),
+      supabase
+        .schema("fleet")
+        .from("v_consumption")
+        .select("filled_at, distance_or_hours, litres, per_100_units, cost_per_unit_fjd")
+        .eq("vehicle_id", vid)
+        .order("filled_at", { ascending: false })
+        .limit(8)
+        .returns<Segment[]>(),
+      supabase
+        .schema("fleet")
+        .from("v_vehicle_monthly_cost")
+        .select("month, fuel_fjd, parts_fjd, labour_fjd")
+        .eq("vehicle_id", vid)
+        .order("month", { ascending: false })
+        .limit(6)
+        .returns<MonthlyCost[]>(),
+    ]);
+
+  const unit = v.meter_kind; // 'km' | 'hours'
+  const hasFuelData = (fuelSummary?.fill_count ?? 0) > 0;
 
   // Driver names are personal data (F8) → resolvable by fleet_admin only.
   const driverIds = Array.from(
@@ -227,6 +284,110 @@ export default async function VehicleDetail({
             )}
           </section>
 
+          <section className="card p-5">
+            <h2 className="mb-3 text-sm font-semibold text-slate-700">
+              Fuel &amp; running cost
+              <span className="ml-2 text-xs font-normal text-slate-400">
+                deterministic SQL analytics (F4) · full-to-full basis
+              </span>
+            </h2>
+            {hasFuelData ? (
+              <>
+                <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <StatTile label="Total fuel spend" value={fmtFjd(fuelSummary!.total_fuel_fjd)} />
+                  <StatTile
+                    label={`Cost / ${unitShort(unit)}`}
+                    value={
+                      fuelSummary!.avg_cost_per_unit_fjd != null
+                        ? fmtFjd(fuelSummary!.avg_cost_per_unit_fjd)
+                        : "—"
+                    }
+                  />
+                  <StatTile
+                    label={`L / 100 ${unitShort(unit)}`}
+                    value={fuelSummary!.avg_per_100_units ?? "—"}
+                  />
+                  <StatTile
+                    label={`Fills · ${unit === "km" ? "km" : "hrs"} run`}
+                    value={`${fuelSummary!.fill_count} · ${fuelSummary!.units_measured}`}
+                  />
+                </div>
+
+                {segments && segments.length > 0 && (
+                  <div className="mb-4">
+                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
+                      Consumption per full-to-full segment
+                    </p>
+                    <table className="min-w-full text-sm">
+                      <thead className="text-left text-xs uppercase text-slate-400">
+                        <tr>
+                          <th className="py-1.5 pr-4">Filled</th>
+                          <th className="py-1.5 pr-4">{titleCase(unit)}</th>
+                          <th className="py-1.5 pr-4">Litres</th>
+                          <th className="py-1.5 pr-4">L / 100 {unitShort(unit)}</th>
+                          <th className="py-1.5">FJD / {unitShort(unit)}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {segments.map((s, i) => (
+                          <tr key={i}>
+                            <td className="py-1.5 pr-4 text-slate-500">{fmtDate(s.filled_at)}</td>
+                            <td className="py-1.5 pr-4 text-slate-600">{s.distance_or_hours}</td>
+                            <td className="py-1.5 pr-4 text-slate-600">{s.litres}</td>
+                            <td className="py-1.5 pr-4 text-slate-600">{s.per_100_units ?? "—"}</td>
+                            <td className="py-1.5 text-slate-600">{s.cost_per_unit_fjd ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {monthly && monthly.length > 0 && (
+                  <div>
+                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
+                      Monthly running cost (fuel + closed job cards)
+                    </p>
+                    <table className="min-w-full text-sm">
+                      <thead className="text-left text-xs uppercase text-slate-400">
+                        <tr>
+                          <th className="py-1.5 pr-4">Month</th>
+                          <th className="py-1.5 pr-4">Fuel</th>
+                          <th className="py-1.5 pr-4">Parts</th>
+                          <th className="py-1.5 pr-4">Labour</th>
+                          <th className="py-1.5">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {monthly.map((m) => (
+                          <tr key={m.month}>
+                            <td className="py-1.5 pr-4 text-slate-600">
+                              {new Date(m.month).toLocaleDateString("en-GB", {
+                                month: "short",
+                                year: "numeric",
+                              })}
+                            </td>
+                            <td className="py-1.5 pr-4 text-slate-500">{fmtFjd(m.fuel_fjd)}</td>
+                            <td className="py-1.5 pr-4 text-slate-500">{fmtFjd(m.parts_fjd)}</td>
+                            <td className="py-1.5 pr-4 text-slate-500">{fmtFjd(m.labour_fjd)}</td>
+                            <td className="py-1.5 font-medium text-slate-700">
+                              {fmtFjd(Number(m.fuel_fjd) + Number(m.parts_fjd) + Number(m.labour_fjd))}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-slate-400">
+                No fuel logged yet. Efficiency needs at least two full fills with
+                meter readings; log fills on the right or via Fuel import.
+              </p>
+            )}
+          </section>
+
           <div className="grid gap-6 sm:grid-cols-2">
             <section className="card p-5">
               <h2 className="mb-3 text-sm font-semibold text-slate-700">Recent meter readings</h2>
@@ -299,6 +460,10 @@ export default async function VehicleDetail({
       </div>
     </div>
   );
+}
+
+function unitShort(meterKind: string): string {
+  return meterKind === "km" ? "km" : "hr";
 }
 
 function Field({ label, value }: { label: string; value: string }) {
