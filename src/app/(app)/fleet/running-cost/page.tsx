@@ -32,6 +32,16 @@ type VehicleRow = {
   avg_cost_per_unit_fjd: number | null;
 };
 type MonthlyByVehicle = { vehicle_id: number; parts_fjd: number; labour_fjd: number };
+type Anomaly = {
+  fuel_log_id: number;
+  vehicle_id: number;
+  filled_at: string;
+  distance_or_hours: number;
+  litres: number;
+  per_100_units: number;
+  baseline_per_100_units: number;
+  deviation_pct: number;
+};
 
 function unitShort(meterKind: string): string {
   return meterKind === "km" ? "km" : "hr";
@@ -69,6 +79,15 @@ export default async function RunningCostPage() {
         .returns<MonthlyByVehicle[]>(),
     ]);
 
+  const { data: anomalies } = await supabase
+    .schema("fleet")
+    .from("v_consumption_anomaly")
+    .select("fuel_log_id, vehicle_id, filled_at, distance_or_hours, litres, per_100_units, baseline_per_100_units, deviation_pct")
+    .eq("is_anomaly", true)
+    .order("filled_at", { ascending: false })
+    .limit(20)
+    .returns<Anomaly[]>();
+
   // per-vehicle maintenance spend (parts + labour), summed from the monthly view
   const maintByVehicle = new Map<number, number>();
   for (const r of vMonthly ?? []) {
@@ -94,6 +113,11 @@ export default async function RunningCostPage() {
   const grandTotal =
     Number(summary?.total_fuel_fjd ?? 0) + Number(summary?.total_maint_fjd ?? 0);
 
+  const vehicleMeta = new Map(
+    (vehicles ?? []).map((v) => [v.vehicle_id, { fleet_code: v.fleet_code, meter_kind: v.meter_kind }]),
+  );
+  const flagged = anomalies ?? [];
+
   return (
     <div>
       <PageHeader
@@ -111,6 +135,74 @@ export default async function RunningCostPage() {
           hint={`${summary?.fuelled_vehicles ?? 0} of ${summary?.active_vehicles ?? 0} vehicles fuelled`}
         />
       </div>
+
+      <section
+        className={`card mb-6 p-5 ${flagged.length > 0 ? "border-amber-300 bg-amber-50/40" : ""}`}
+      >
+        <h2 className="mb-1 text-sm font-semibold text-slate-700">
+          Fills to review
+          <span className="ml-2 text-xs font-normal text-slate-400">
+            efficiency anomalies vs each vehicle&rsquo;s baseline (F4)
+          </span>
+        </h2>
+        {flagged.length > 0 ? (
+          <table className="mt-2 min-w-full text-sm">
+            <thead className="text-left text-xs uppercase text-slate-400">
+              <tr>
+                <th className="py-1.5 pr-4">Vehicle</th>
+                <th className="py-1.5 pr-4">Filled</th>
+                <th className="py-1.5 pr-4">Distance / hrs</th>
+                <th className="py-1.5 pr-4">Litres</th>
+                <th className="py-1.5 pr-4">L / 100</th>
+                <th className="py-1.5 pr-4">Baseline</th>
+                <th className="py-1.5">Deviation</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-amber-100">
+              {flagged.map((a) => {
+                const meta = vehicleMeta.get(a.vehicle_id);
+                const u = meta ? unitShort(meta.meter_kind) : "";
+                return (
+                  <tr key={a.fuel_log_id}>
+                    <td className="py-1.5 pr-4">
+                      <Link
+                        href={`/fleet/vehicles/${a.vehicle_id}`}
+                        className="font-medium text-gold-700 hover:underline"
+                      >
+                        {meta?.fleet_code ?? `#${a.vehicle_id}`}
+                      </Link>
+                    </td>
+                    <td className="py-1.5 pr-4 text-slate-500">{fmtDate(a.filled_at)}</td>
+                    <td className="py-1.5 pr-4 text-slate-600">
+                      {a.distance_or_hours} {u}
+                    </td>
+                    <td className="py-1.5 pr-4 text-slate-600">{a.litres}</td>
+                    <td className="py-1.5 pr-4 text-slate-700">{a.per_100_units}</td>
+                    <td className="py-1.5 pr-4 text-slate-400">{a.baseline_per_100_units}</td>
+                    <td className="py-1.5">
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                          a.deviation_pct > 0
+                            ? "bg-red-100 text-red-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {a.deviation_pct > 0 ? "+" : ""}
+                        {a.deviation_pct}% {a.deviation_pct > 0 ? "· high" : "· low"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <p className="py-2 text-sm text-slate-500">
+            No fills flagged — every full-to-full segment is within 25% of its
+            vehicle&rsquo;s baseline (vehicles need ≥ 3 segments to be assessed).
+          </p>
+        )}
+      </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card p-5">
