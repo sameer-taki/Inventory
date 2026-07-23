@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -20,7 +21,7 @@ function LoginForm() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(params.get("error"));
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -109,6 +110,16 @@ function LoginForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+            {mode === "signin" && (
+              <div className="mt-1 text-right">
+                <Link
+                  href="/forgot-password"
+                  className="text-xs font-medium text-gold-700 hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+            )}
           </div>
 
           {error && (
