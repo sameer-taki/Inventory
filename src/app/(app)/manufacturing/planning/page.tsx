@@ -33,6 +33,21 @@ type Action = {
   detail: Record<string, unknown>;
   status: string;
 };
+type Projection = {
+  item_id: number;
+  seq: number;
+  bucket_date: string;
+  event_type: string;
+  qty: number;
+  projected_available: number;
+};
+
+const EVENT_LABEL: Record<string, string> = {
+  opening: "Opening (net of safety)",
+  scheduled_receipt: "Scheduled receipt",
+  planned_receipt: "Planned receipt",
+  gross_req: "Gross requirement",
+};
 
 export default async function PlanningPage() {
   const supabase = await createClient();
@@ -47,10 +62,11 @@ export default async function PlanningPage() {
 
   let planned: Planned[] = [];
   let actions: Action[] = [];
+  let projection: Projection[] = [];
   let itemMap = new Map<number, string>();
 
   if (run) {
-    const [{ data: po }, { data: am }, { data: items }] = await Promise.all([
+    const [{ data: po }, { data: am }, { data: proj }, { data: items }] = await Promise.all([
       supabase
         .schema("mfg")
         .from("planned_orders")
@@ -65,6 +81,14 @@ export default async function PlanningPage() {
         .eq("mrp_run_id", run.mrp_run_id)
         .returns<Action[]>(),
       supabase
+        .schema("mfg")
+        .from("mrp_projection")
+        .select("item_id, seq, bucket_date, event_type, qty, projected_available")
+        .eq("mrp_run_id", run.mrp_run_id)
+        .order("item_id")
+        .order("seq")
+        .returns<Projection[]>(),
+      supabase
         .schema("ops")
         .from("items")
         .select("item_id, item_no")
@@ -72,7 +96,16 @@ export default async function PlanningPage() {
     ]);
     planned = po ?? [];
     actions = am ?? [];
+    projection = proj ?? [];
     itemMap = new Map((items ?? []).map((i) => [i.item_id, i.item_no]));
+  }
+
+  // group the time-phased ledger by item
+  const projByItem = new Map<number, Projection[]>();
+  for (const p of projection) {
+    const arr = projByItem.get(p.item_id) ?? [];
+    arr.push(p);
+    projByItem.set(p.item_id, arr);
   }
 
   return (
@@ -206,6 +239,58 @@ export default async function PlanningPage() {
               )}
             </section>
           </div>
+
+          {projByItem.size > 0 && (
+            <section className="mt-6">
+              <h2 className="mb-1 text-sm font-semibold text-slate-700">
+                Time-phased plan
+                <span className="ml-2 text-xs font-normal text-slate-400">
+                  projected available balance per item (deterministic, I4)
+                </span>
+              </h2>
+              <div className="grid gap-4 lg:grid-cols-2">
+                {Array.from(projByItem.entries()).map(([itemId, rows]) => (
+                  <div key={itemId} className="card overflow-hidden">
+                    <div className="border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700">
+                      {itemMap.get(itemId) ?? `Item ${itemId}`}
+                    </div>
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2">Date</th>
+                          <th className="px-3 py-2">Event</th>
+                          <th className="px-3 py-2 text-right">Qty</th>
+                          <th className="px-3 py-2 text-right">Projected</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {rows.map((r) => (
+                          <tr key={r.seq} className={r.event_type === "planned_receipt" ? "bg-gold-50/40" : ""}>
+                            <td className="px-3 py-1.5 text-slate-500">{fmtDate(r.bucket_date)}</td>
+                            <td className="px-3 py-1.5 text-slate-600">
+                              {EVENT_LABEL[r.event_type] ?? r.event_type}
+                            </td>
+                            <td className={`px-3 py-1.5 text-right tabular-nums ${Number(r.qty) < 0 ? "text-slate-500" : "text-slate-700"}`}>
+                              {Number(r.qty) > 0 ? "+" : ""}
+                              {r.qty}
+                            </td>
+                            <td className={`px-3 py-1.5 text-right font-medium tabular-nums ${Number(r.projected_available) < 0 ? "text-red-600" : "text-slate-800"}`}>
+                              {r.projected_available}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-slate-400">
+                Planned receipts (highlighted) are the engine&rsquo;s suggestions that
+                bring projected available back to zero at each shortage — the same
+                math behind the planned orders above.
+              </p>
+            </section>
+          )}
         </>
       )}
     </div>
