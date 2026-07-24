@@ -28,6 +28,7 @@ const SECTIONS: NavSection[] = [
       { href: "/manufacturing/inventory", label: "Inventory" },
       { href: "/manufacturing/mps", label: "MPS" },
       { href: "/manufacturing/planning", label: "Planning (MRP)" },
+      { href: "/manufacturing/shadow", label: "Shadow-run diff" },
       { href: "/manufacturing/boms", label: "BOMs" },
       { href: "/manufacturing/work-centres", label: "Work centres" },
       { href: "/manufacturing/routings", label: "Routings" },
