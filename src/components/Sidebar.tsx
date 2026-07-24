@@ -32,6 +32,8 @@ const SECTIONS: NavSection[] = [
       { href: "/manufacturing/routings", label: "Routings" },
       { href: "/manufacturing/capacity", label: "Capacity" },
       { href: "/manufacturing/costs", label: "Standard costs" },
+      { href: "/manufacturing/shortages", label: "Shortages" },
+      { href: "/manufacturing/where-used", label: "Where used" },
       { href: "/manufacturing/genealogy", label: "Genealogy" },
     ],
   },
