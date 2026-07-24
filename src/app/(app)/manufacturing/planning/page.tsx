@@ -42,6 +42,13 @@ type Projection = {
   projected_available: number;
 };
 
+type Peg = {
+  planned_order_id: number;
+  demand_date: string;
+  source_type: string;
+  parent_item_id: number | null;
+};
+
 const EVENT_LABEL: Record<string, string> = {
   opening: "Opening (net of safety)",
   scheduled_receipt: "Scheduled receipt",
@@ -63,10 +70,11 @@ export default async function PlanningPage() {
   let planned: Planned[] = [];
   let actions: Action[] = [];
   let projection: Projection[] = [];
+  let pegs: Peg[] = [];
   let itemMap = new Map<number, string>();
 
   if (run) {
-    const [{ data: po }, { data: am }, { data: proj }, { data: items }] = await Promise.all([
+    const [{ data: po }, { data: am }, { data: proj }, { data: pg }, { data: items }] = await Promise.all([
       supabase
         .schema("mfg")
         .from("planned_orders")
@@ -89,6 +97,12 @@ export default async function PlanningPage() {
         .order("seq")
         .returns<Projection[]>(),
       supabase
+        .schema("mfg")
+        .from("v_pegging")
+        .select("planned_order_id, demand_date, source_type, parent_item_id")
+        .eq("mrp_run_id", run.mrp_run_id)
+        .returns<Peg[]>(),
+      supabase
         .schema("ops")
         .from("items")
         .select("item_id, item_no")
@@ -97,8 +111,10 @@ export default async function PlanningPage() {
     planned = po ?? [];
     actions = am ?? [];
     projection = proj ?? [];
+    pegs = pg ?? [];
     itemMap = new Map((items ?? []).map((i) => [i.item_id, i.item_no]));
   }
+  const pegMap = new Map(pegs.map((p) => [p.planned_order_id, p]));
 
   // group the time-phased ledger by item
   const projByItem = new Map<number, Projection[]>();
@@ -154,6 +170,7 @@ export default async function PlanningPage() {
                     <th className="px-4 py-2">Item</th>
                     <th className="px-4 py-2">Kind</th>
                     <th className="px-4 py-2">Qty</th>
+                    <th className="px-4 py-2">Pegged to</th>
                     <th className="px-4 py-2">Release</th>
                     <th className="px-4 py-2">Due</th>
                     <th className="px-4 py-2">Status</th>
@@ -180,6 +197,20 @@ export default async function PlanningPage() {
                         </td>
                         <td className="px-4 py-2 text-slate-700">{p.qty}</td>
                         <td className="px-4 py-2 text-slate-500">
+                          {(() => {
+                            const peg = pegMap.get(p.planned_order_id);
+                            if (!peg) return <span className="text-slate-300">—</span>;
+                            return peg.source_type === "mps" ? (
+                              <span className="text-slate-600">MPS · {fmtDate(peg.demand_date)}</span>
+                            ) : (
+                              <span className="text-slate-600">
+                                {itemMap.get(peg.parent_item_id ?? -1) ?? `#${peg.parent_item_id}`}{" "}
+                                <span className="text-slate-400">order</span>
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-4 py-2 text-slate-500">
                           {fmtDate(p.release_date)}
                         </td>
                         <td className="px-4 py-2 text-slate-500">
@@ -197,7 +228,7 @@ export default async function PlanningPage() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                      <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                         No shortages — nothing to plan.
                       </td>
                     </tr>
