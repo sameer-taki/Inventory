@@ -31,6 +31,37 @@ export async function runMrpAction(): Promise<void> {
   redirect("/manufacturing/planning");
 }
 
+export async function runShadowMrpAction(): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .schema("mfg")
+    .rpc("run_mrp", { p_horizon_days: 120, p_run_type: "shadow" });
+  if (error) throw new Error(error.message);
+  revalidatePath("/manufacturing/shadow");
+  redirect("/manufacturing/shadow");
+}
+
+export async function categoriseShadowDiffAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const itemId = n(formData.get("item_id"));
+  const dueDate = s(formData.get("due_date"));
+  const category = s(formData.get("category"));
+  if (!itemId || !dueDate || !category)
+    return { error: "Item, date and category are required." };
+  const supabase = await createClient();
+  const { error } = await supabase.schema("mfg").rpc("categorise_shadow_diff", {
+    p_item_id: itemId,
+    p_due_date: dueDate,
+    p_category: category,
+    p_note: s(formData.get("note")),
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/manufacturing/shadow");
+  return {};
+}
+
 export async function firmPlannedOrderAction(
   _prev: ActionState,
   formData: FormData,
