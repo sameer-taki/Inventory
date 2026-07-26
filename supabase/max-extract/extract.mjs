@@ -51,6 +51,10 @@ const SAMPLE = {
   ],
   boms: [{ bom_no: "B-TRAY-30", parent: "MF-TRAY-30", component: "MAXPULP", qty_per: 2.0, scrap_pct: 5 }],
   routings: [{ routing_no: "R-TRAY-30", part_no: "MF-TRAY-30", op_seq: 10, wc_code: "WC-FORM", run_min: 0.5 }],
+  planner_params: [
+    { part_no: "MF-TRAY-30", lead_time_days: 5, safety_stock: 20, lot_policy: "lot_for_lot", make_or_buy: "make" },
+    { part_no: "MAXPULP", lead_time_days: 10, safety_stock: 50, lot_policy: "lot_for_lot", make_or_buy: "buy" },
+  ],
   mrp_recommendations: [
     { part_no: "MF-TRAY-30", kind: "make", qty: 90, due_date: "2026-08-15" },
     { part_no: "MAXPULP", bc_item_no: "BC-RM-PULP-KRA", kind: "buy", qty: 150, due_date: "2026-08-10" },
